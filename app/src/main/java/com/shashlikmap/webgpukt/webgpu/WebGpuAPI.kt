@@ -70,27 +70,14 @@ class WebGpuAPI(private val mesh: Mesh) {
         const val WEBGPU_C_BUNDLED = "webgpu_c_bundled"
 
         val GL_TO_WGPU = floatArrayOf(
-            1.0f,
-            0.0f,
-            0.0f,
-            0.0f,
-            0.0f,
-            1.0f,
-            0.0f,
-            0.0f,
-            0.0f,
-            0.0f,
-            0.5f,
-            0.5f,
-            0.0f,
-            0.0f,
-            0.0f,
-            1.0f
+            1.0f, 0.0f, 0.0f, 0.0f,
+            0.0f, 1.0f, 0.0f, 0.0f,
+            0.0f, 0.0f, 0.5f, 0.5f,
+            0.0f, 0.0f, 0.0f, 1.0f,
         )
 
         val INITIAL_EYE = Float4(0.0f, 2.0f, 3.0f, 1.0f)
 
-        // TODO Code gen to struct prototype?
         val SHADER_STRUCT = arrayOf(Float32x3, Float32x3, Float32x4)
 
         init {
@@ -123,8 +110,8 @@ class WebGpuAPI(private val mesh: Mesh) {
         if (isPrepared) return
 
         val instanceDescriptor = GPUInstanceDescriptor(
-            requiredFeatures = intArrayOf(InstanceFeatureName.TimedWaitAny), requiredLimits =
-                GPUInstanceLimits()
+            requiredFeatures = intArrayOf(InstanceFeatureName.TimedWaitAny),
+            requiredLimits = GPUInstanceLimits()
         )
         gpuInstance = GPU.createInstance(instanceDescriptor)
         gpuAdapter = gpuInstance?.requestAdapter()
@@ -187,8 +174,10 @@ class WebGpuAPI(private val mesh: Mesh) {
 
         val module = currentDevice.createShaderModule(shaderModuleDescriptor)
 
-        val colorTargetState = GPUColorTargetState(format = surfaceConfiguration.format,
-            blend = GPUBlendState().alphaBlending)
+        val colorTargetState = GPUColorTargetState(
+            format = surfaceConfiguration.format,
+            blend = GPUBlendState().alphaBlending
+        )
         val fragmentState = GPUFragmentState(
             module = module,
             targets = arrayOf(colorTargetState),
@@ -209,6 +198,12 @@ class WebGpuAPI(private val mesh: Mesh) {
             .setCullMode(Back)
             .build()
 
+        val pipelineLayout = currentDevice.createPipelineLayout(
+            GPUPipelineLayoutDescriptor(
+                bindGroupLayouts = arrayOf(globalUniformBindGroupLayout!!)
+            )
+        )
+
         val renderPipelineDescriptor = GPURenderPipelineDescriptor.Builder(
             vertex = GPUVertexState(
                 module = module,
@@ -217,13 +212,7 @@ class WebGpuAPI(private val mesh: Mesh) {
             )
         ).setFragment(fragmentState)
             .setPrimitive(gpuPrimitiveState)
-            .setLayout(
-                currentDevice.createPipelineLayout(
-                    GPUPipelineLayoutDescriptor(
-                        bindGroupLayouts = arrayOf(globalUniformBindGroupLayout!!)
-                    )
-                )
-            )
+            .setLayout(pipelineLayout)
             .setMultisample(multisampleView.multisampleState)
             .build()
 
@@ -233,13 +222,12 @@ class WebGpuAPI(private val mesh: Mesh) {
     private fun createGlobalUniform() {
         val currentDevice = gpuDevice ?: return
 
-        globalUniformBuffer =
-            currentDevice.createBuffer(
-                GPUBufferDescriptor(
-                    size = viewProjMatrix.paddedSize,
-                    usage = BufferUsage.CopyDst or BufferUsage.Uniform
-                )
+        globalUniformBuffer = currentDevice.createBuffer(
+            GPUBufferDescriptor(
+                size = viewProjMatrix.paddedSize,
+                usage = BufferUsage.CopyDst or BufferUsage.Uniform
             )
+        )
 
         globalUniformBindGroupLayout = currentDevice.createBindGroupLayout(
             GPUBindGroupLayoutDescriptor(
@@ -256,7 +244,8 @@ class WebGpuAPI(private val mesh: Mesh) {
                 layout = globalUniformBindGroupLayout!!,
                 entries = arrayOf(
                     GPUBindGroupEntry.Builder(binding = 0)
-                        .setBuffer(globalUniformBuffer!!).build()
+                        .setBuffer(globalUniformBuffer!!)
+                        .build()
                 )
             )
         )
@@ -320,11 +309,12 @@ class WebGpuAPI(private val mesh: Mesh) {
         val multisampleView = this.multisampleView ?: return
 
         val surfaceTexture = currentSurface.getCurrentTexture()
+        val surfaceTextureView = surfaceTexture.texture.createView()
 
         val renderPassColorAttachment =
             GPURenderPassColorAttachment.Builder(GPUColor(0.0, 0.0, 0.5, 1.0))
                 .setView(multisampleView.textureView)
-                .setResolveTarget(surfaceTexture.texture.createView())
+                .setResolveTarget(surfaceTextureView)
                 .setLoadOp(LoadOp.Clear)
                 .setStoreOp(StoreOp.Store)
                 .build()
@@ -336,26 +326,43 @@ class WebGpuAPI(private val mesh: Mesh) {
         val commandEncoder = currentDevice.createCommandEncoder()
         val renderPassEncoder = commandEncoder.beginRenderPass(renderPassDescriptor)
 
-        renderPassEncoder.apply {
-            setPipeline(currentRenderPipeline)
-            setBindGroup(0, globalUniformBindGroup!!)
-            setVertexBuffer(0, meshVertexBuffer!!)
-            setIndexBuffer(meshIndexBuffer!!, format = IndexFormat.Uint32)
-            drawIndexed(mesh.indices.size)
-            end()
-        }
+        renderPassEncoder.setPipeline(currentRenderPipeline)
+        renderPassEncoder.setBindGroup(0, globalUniformBindGroup!!)
+        renderPassEncoder.setVertexBuffer(0, meshVertexBuffer!!)
+        renderPassEncoder.setIndexBuffer(meshIndexBuffer!!, format = IndexFormat.Uint32)
+        renderPassEncoder.drawIndexed(mesh.indices.size)
+        renderPassEncoder.end()
 
         val commands = commandEncoder.finish()
-
         currentDevice.queue.submit(arrayOf(commands))
+
+        surfaceTextureView.close()
 
         currentSurface.present()
         gpuInstance?.processEvents()
     }
 
     fun reset() {
-        gpuSurface = null
+        meshVertexBuffer?.close()
+        meshIndexBuffer?.close()
+        globalUniformBuffer?.close()
+        globalUniformBindGroup?.close()
+        globalUniformBindGroupLayout?.close()
+        gpuRenderPipeline?.close()
+        multisampleView?.close()
+        gpuSurface?.close()
+        gpuDevice?.close()
+        gpuAdapter?.close()
+        gpuInstance?.close()
+
+        meshVertexBuffer = null
+        meshIndexBuffer = null
+        globalUniformBuffer = null
+        globalUniformBindGroup = null
+        globalUniformBindGroupLayout = null
         gpuRenderPipeline = null
+        multisampleView = null
+        gpuSurface = null
         gpuDevice = null
         gpuAdapter = null
         gpuInstance = null
