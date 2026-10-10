@@ -61,6 +61,9 @@ import com.shashlikmap.webgpukt.webgpu.utils.toByteBuffer
 import dev.romainguy.kotlin.math.Float3
 import dev.romainguy.kotlin.math.Float4
 import dev.romainguy.kotlin.math.rotation
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import kotlin.math.sin
 
 /**
  * Wrapper around androidx.webgpu
@@ -105,6 +108,8 @@ class WebGpuAPI(private val mesh: Mesh) {
 
     private val perspectiveMatrix = FloatArray(16)
     private val viewProjMatrix = FloatArray(16)
+
+    private val immediateBuffer = ByteBuffer.allocateDirect(16).order(ByteOrder.nativeOrder())
 
     private suspend fun prepare() {
         if (isPrepared) return
@@ -200,7 +205,8 @@ class WebGpuAPI(private val mesh: Mesh) {
 
         val pipelineLayout = currentDevice.createPipelineLayout(
             GPUPipelineLayoutDescriptor(
-                bindGroupLayouts = arrayOf(globalUniformBindGroupLayout!!)
+                bindGroupLayouts = arrayOf(globalUniformBindGroupLayout!!),
+                immediateSize = 16
             )
         )
 
@@ -323,11 +329,24 @@ class WebGpuAPI(private val mesh: Mesh) {
             .setColorAttachments(arrayOf(renderPassColorAttachment))
             .build()
 
+        val timeSec = (System.currentTimeMillis() % 100000L) / 1000.0f
+        val r = (sin(timeSec.toDouble()).toFloat() * 0.5f + 0.5f)
+        val g = (sin((timeSec + 2.0f).toDouble()).toFloat() * 0.5f + 0.5f)
+        val b = (sin((timeSec + 4.0f).toDouble()).toFloat() * 0.5f + 0.5f)
+
+        immediateBuffer.clear()
+        immediateBuffer.putFloat(r)
+        immediateBuffer.putFloat(g)
+        immediateBuffer.putFloat(b)
+        immediateBuffer.putFloat(1.0f)
+        immediateBuffer.rewind()
+
         val commandEncoder = currentDevice.createCommandEncoder()
         val renderPassEncoder = commandEncoder.beginRenderPass(renderPassDescriptor)
 
         renderPassEncoder.setPipeline(currentRenderPipeline)
         renderPassEncoder.setBindGroup(0, globalUniformBindGroup!!)
+        renderPassEncoder.setImmediates(0, immediateBuffer)
         renderPassEncoder.setVertexBuffer(0, meshVertexBuffer!!)
         renderPassEncoder.setIndexBuffer(meshIndexBuffer!!, format = IndexFormat.Uint32)
         renderPassEncoder.drawIndexed(mesh.indices.size)
