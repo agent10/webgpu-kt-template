@@ -4,6 +4,11 @@ struct Global {
 @group(0) @binding(0)
 var<uniform> global: Global;
 
+struct Immediates {
+    light_color: vec3<f32>,
+};
+var<immediate> immediates: Immediates;
+
 struct VertexInput {
     @location(0) position: vec3<f32>,
     @location(1) normal: vec3<f32>,
@@ -27,14 +32,14 @@ struct VertexOutput {
 }
 
 const light_pos = normalize(vec3(5.0, 5.0, 5.0));
-const light_color = vec3(1.0, 1.0, 1.0);
 const ambient_color = vec3(0.3, 0.3, 0.3);
 
 @fragment fn fragmentMain(in: VertexOutput) -> @location(0) vec4<f32> {
     let light_dir = normalize(light_pos - in.world_position);
 
     let diffuse_strength = max(dot(normalize(in.world_normal), light_dir), 0.0);
-    let diffuse_color = light_color * diffuse_strength;
+
+    let diffuse_color = immediates.light_color * diffuse_strength;
 
     let result_color = (ambient_color + diffuse_color) * in.color.rgb;
 
